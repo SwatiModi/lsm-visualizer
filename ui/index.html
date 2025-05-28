@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LSM Tree Visualizer</title>
+    <style>
+        body { font-family: monospace; background: #222; color: #eee; }
+        h2 { border-bottom: 1px solid #555; }
+        pre { background: #333; padding: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>LSM Tree Visualizer</h1>
+
+    <h2>Memtable</h2>
+    <pre id="memtable">Loading...</pre>
+
+    <h2>SSTables</h2>
+    <pre id="sstables">Loading...</pre>
+
+    <script>
+        async function fetchData() {
+            try {
+                const res = await fetch('http://localhost:8080/status');
+                const data = await res.json();
+
+                document.getElementById('memtable').textContent = JSON.stringify(data.memtable, null, 2);
+                document.getElementById('sstables').textContent = JSON.stringify(data.sstables, null, 2);
+            } catch (e) {
+                document.getElementById('memtable').textContent = 'Error fetching data';
+                document.getElementById('sstables').textContent = 'Error fetching data';
+            }
+        }
+
+        fetchData();
+        setInterval(fetchData, 2000); // Refresh every 2 seconds
+    </script>
+</body>
+</html>
