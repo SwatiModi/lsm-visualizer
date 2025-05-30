@@ -1,55 +1,40 @@
 package lsm
 
-import (
-	"errors"
-	"sort"
-	"sync"
-)
-
 type Memtable struct {
-	mu    sync.RWMutex
-	table map[string]string
-	keys  []string // sorted keys for iteration
+	data     map[string]string
+	capacity int
 }
 
-func NewMemtable() *Memtable {
+func NewMemtable(capacity int) *Memtable {
 	return &Memtable{
-		table: make(map[string]string),
-		keys:  []string{},
+		data:     make(map[string]string),
+		capacity: capacity,
 	}
 }
 
-// Put adds or updates a key-value pair
-func (m *Memtable) Put(key, value string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.table[key]; !exists {
-		m.keys = append(m.keys, key)
-		sort.Strings(m.keys)
-	}
-	m.table[key] = value
+func (m *Memtable) Put(key, val string) {
+	m.data[key] = val
 }
 
-// Get retrieves the value for a key
-func (m *Memtable) Get(key string) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	val, ok := m.table[key]
-	if !ok {
-		return "", errors.New("key not found")
-	}
-	return val, nil
+func (m *Memtable) Get(key string) (string, bool) {
+	val, found := m.data[key]
+	return val, found
 }
 
-// Flush returns all entries and resets the memtable
+func (m *Memtable) Size() int {
+	return len(m.data)
+}
+
+func (m *Memtable) Keys() []string {
+	keys := make([]string, 0, len(m.data))
+	for k := range m.data {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (m *Memtable) Flush() map[string]string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	flushed := m.table
-	m.table = make(map[string]string)
-	m.keys = []string{}
-	return flushed
+	data := m.data
+	m.data = make(map[string]string)
+	return data
 }

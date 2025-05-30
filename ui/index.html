@@ -1,38 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>LSM Tree Visualizer</title>
-    <style>
-        body { font-family: monospace; background: #222; color: #eee; }
-        h2 { border-bottom: 1px solid #555; }
-        pre { background: #333; padding: 10px; border-radius: 4px; }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LSM Tree Visualizer</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  h2 { border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  #memtable, #bloom, #sstables, #compactions { margin-bottom: 20px; }
+  pre { background: #f8f8f8; padding: 10px; border-radius: 4px; max-height: 200px; overflow: auto; }
+</style>
 </head>
 <body>
-    <h1>LSM Tree Visualizer</h1>
 
-    <h2>Memtable</h2>
-    <pre id="memtable">Loading...</pre>
+<h1>LSM Tree Visualizer</h1>
 
-    <h2>SSTables</h2>
-    <pre id="sstables">Loading...</pre>
+<section id="memtable">
+  <h2>Memtable Keys</h2>
+  <pre id="memtableData">Loading...</pre>
+</section>
 
-    <script>
-        async function fetchData() {
-            try {
-                const res = await fetch('http://localhost:8080/status');
-                const data = await res.json();
+<section id="bloom">
+  <h2>Bloom Filter Stats</h2>
+  <pre id="bloomData">Loading...</pre>
+</section>
 
-                document.getElementById('memtable').textContent = JSON.stringify(data.memtable, null, 2);
-                document.getElementById('sstables').textContent = JSON.stringify(data.sstables, null, 2);
-            } catch (e) {
-                document.getElementById('memtable').textContent = 'Error fetching data';
-                document.getElementById('sstables').textContent = 'Error fetching data';
-            }
-        }
+<section id="sstables">
+  <h2>SSTables (Levels)</h2>
+  <pre id="sstablesData">Loading...</pre>
+</section>
 
-        fetchData();
-        setInterval(fetchData, 2000); // Refresh every 2 seconds
-    </script>
+<section id="compactions">
+  <h2>Compaction Logs</h2>
+  <pre id="compactionsData">Loading...</pre>
+</section>
+
+<script>
+async function fetchAndShow(endpoint, elemId) {
+  try {
+    const res = await fetch(endpoint);
+    if (!res.ok) {
+      document.getElementById(elemId).textContent = 'Error: ' + res.statusText;
+      return;
+    }
+    const data = await res.json();
+    document.getElementById(elemId).textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById(elemId).textContent = 'Fetch error: ' + e.message;
+  }
+}
+
+async function refresh() {
+  await Promise.all([
+    fetchAndShow('/memtable', 'memtableData'),
+    fetchAndShow('/bloom', 'bloomData'),
+    fetchAndShow('/sstables', 'sstablesData'),
+    fetchAndShow('/compactions', 'compactionsData')
+  ]);
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+
 </body>
 </html>

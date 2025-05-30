@@ -1,32 +1,29 @@
 package lsm
 
+import "github.com/willf/bloom"
+
 type BloomFilter struct {
-	bits []bool
-	size int
+	filter *bloom.BloomFilter
 }
 
-func NewBloomFilter(size int) *BloomFilter {
+func NewBloomFilter(size uint) *BloomFilter {
 	return &BloomFilter{
-		bits: make([]bool, size),
-		size: size,
+		filter: bloom.NewWithEstimates(size, 0.01),
 	}
-}
-
-// Very simple hash function for demonstration (not production quality)
-func hash(key string, seed int) int {
-	h := 0
-	for i := 0; i < len(key); i++ {
-		h = (h*31 + int(key[i]) + seed) % 100000
-	}
-	return h
 }
 
 func (bf *BloomFilter) Add(key string) {
-	idx := hash(key, 1) % bf.size
-	bf.bits[idx] = true
+	bf.filter.AddString(key)
 }
 
-func (bf *BloomFilter) MightContain(key string) bool {
-	idx := hash(key, 1) % bf.size
-	return bf.bits[idx]
+func (bf *BloomFilter) Test(key string) bool {
+	return bf.filter.TestString(key)
+}
+
+func (bf *BloomFilter) Stats() map[string]interface{} {
+	return map[string]interface{}{
+		"capacity": bf.filter.Cap(),
+		"k":        bf.filter.K(),
+		"est_fp":   bf.filter.EstimateFalsePositiveRate(5),
+	}
 }

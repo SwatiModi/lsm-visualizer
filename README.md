@@ -1,41 +1,136 @@
-# LSM Tree Visualizer
+# 📊 LSM Tree Visualizer
 
-This project simulates a basic Log-Structured Merge Tree (LSM Tree) data structure in Go, focusing on core components like Memtable, Write-Ahead Log (WAL), SSTables, and compaction. It’s designed as a learning and visualization tool to demonstrate how modern databases like RocksDB, LevelDB, and Cassandra manage data efficiently.
+A simple LSM Tree implementation in Go with:
 
----
+- 🧠 In-memory **Memtable**
+- 🔍 **Bloom Filters** for existence checks
+- 💾 **SSTables** written to disk
+- 🔄 **Levelled Compaction** across SSTables
+- 🌐 **HTTP API** for data access
+- 🖥️ **UI for visualization** of LSM internals
 
-## Features
-
-- **Memtable:** In-memory sorted key-value store
-- **WAL:** Write-ahead log for durability
-- **SSTable:** Immutable on-disk sorted string tables saved as JSON files
-- **Compaction:** Merge multiple SSTables into a single one, simulating database compaction
-- **Bloom Filter:** Simple probabilistic data structure to speed up reads by filtering non-existent keys
-- **Interactive CLI:** Insert (`put`), retrieve (`get`), compact SSTables, and exit commands
+> I built this to understand how real-world time-series databases or key-value stores implement LSM Trees.
 
 ---
 
-## Why LSM Trees?
+## 🚀 Features
 
-LSM Trees optimize write throughput by buffering writes in memory (memtable) and flushing them to disk in sorted files (SSTables). They perform periodic compactions to merge and keep SSTables optimized for reads. They are widely used in many high-performance databases.
-
----
-
-## Code Structure
-
-- `lsm/memtable.go`: Memtable implementation — a sorted in-memory key-value map with concurrency safety.
-- `lsm/wal.go`: Write-Ahead Log — an append-only file logging all writes for durability.
-- `lsm/sstable.go`: SSTable simulation — saves immutable sorted key-value maps to disk as JSON files.
-- `lsm/compactor.go`: Compaction logic — merges two SSTables into one.
-- `lsm/bloom.go`: Simple Bloom filter for membership checks.
-- `lsm/store.go`: The main LSM Store managing memtable, WAL, SSTables, and compaction.
-- `main.go`: Command-line interface to interact with the LSM Store.
+✅ Put/Get key-value pairs via HTTP  
+✅ Visualize Memtable, Bloom Filter, SSTables, and Compaction Logs  
+✅ Observe SSTable flushing and compaction as they happen  
+✅ Persistent SSTable storage on disk  
+✅ Configurable Memtable and Bloom filter sizes  
+✅ Auto-refresh UI for live updates  
 
 ---
 
-## How to Run
+## 🛠️ Getting Started
 
-1. Clone the repo and initialize Go modules:
+### 1. Clone the repo
 
-   ```bash
-   go mod tidy
+```bash
+git clone git@github.com:SwatiModi/lsm-visualizer.git
+cd lsm-tree-visualizer
+```
+
+### 2. Build and Run
+
+```bash
+go mod tidy
+go run main.go
+```
+
+The server will start at: [http://localhost:8080](http://localhost:8080)
+
+---
+
+## 📦 Usage
+
+### Insert a Key
+
+```bash
+curl -X POST http://localhost:8080/put   -H "Content-Type: application/json"   -d '{"key":"model", "value":"iphone-11-se"}'
+```
+
+### Fetch a Key
+
+```bash
+curl "http://localhost:8080/get?key=model"
+```
+
+---
+
+## 🖥️ UI Overview
+
+Accessible at [http://localhost:8080](http://localhost:8080)
+
+The frontend auto-refreshes every 2 seconds and displays:
+
+### ✅ Memtable Keys
+- Shows all current in-memory keys
+- Triggers flush when full
+
+### 🔍 Bloom Filter Stats
+- Capacity (number of elements)
+- Estimated false positive rate
+
+### 💾 SSTables by Level
+- Lists all SSTable files per compaction level
+- Shows min_key, max_key, and size for each
+
+### 🔄 Compaction Logs
+- Logs every flush to disk
+- Logs compaction steps across levels
+
+---
+
+## 📁 Project Structure
+
+```
+lsm-tree-visualizer/
+├── main.go                 # HTTP server and LSM tree bootstrap
+├── lsm/
+│   ├── memtable.go         # In-memory map with capacity
+│   ├── bloom.go            # Simple Bloom filter implementation
+│   ├── sstable.go          # SSTable creation, loading, and file operations
+│   ├── compactor.go        # Compaction logic across levels
+│   ├── store.go            # Central LSM tree logic
+│   ├── wal.go              # Write-ahead log (optional/future)
+├── ui/
+│   └── index.html          # Visualization UI
+├── go.mod / go.sum         # Dependencies
+├── README.md
+└── sstables/               # On-disk SSTable data
+```
+
+---
+
+## 📸 Screenshot (Sample)
+![alt text](ui/screencapture-localhost-8080-2025-05-30-14_24_46.png)
+
+---
+
+## 🧠 Future Ideas
+
+- Toggle compaction strategy (e.g., size-tiered vs leveled)  
+- Export SSTable structure for offline viewing  
+
+---
+
+## 🙌 Contributing
+
+Feel free to open issues or PRs to enhance functionality, fix bugs, or improve documentation.
+
+---
+
+## 🧠 Learn More
+
+This project is inspired by real-world implementations in:
+
+- [LevelDB](https://github.com/google/leveldb)
+- [RocksDB](https://github.com/facebook/rocksdb)
+- [BadgerDB](https://github.com/dgraph-io/badger)
+
+---
+
+Made with 💙 to demystify storage internals.

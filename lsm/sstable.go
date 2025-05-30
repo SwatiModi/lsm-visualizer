@@ -2,79 +2,89 @@ package lsm
 
 import (
 	"encoding/json"
-	"errors"
-	"io/ioutil"
-	"sort"
-	"sync"
+	"os"
+	"path/filepath"
 )
 
 type SSTable struct {
-	mu   sync.RWMutex
-	Path string
-	Data map[string]string
-	Keys []string
+	MinKey string            `json:"min_key"`
+	MaxKey string            `json:"max_key"`
+	Data   map[string]string `json:"data"`
+	Size   int               `json:"size"`
+	Level  int               `json:"level"` // NEW: Added Level field
 }
 
-func NewSSTableFromMap(path string, data map[string]string) (*SSTable, error) {
-	sst := &SSTable{
-		Path: path,
-		Data: data,
-		Keys: make([]string, 0, len(data)),
+func NewSSTable(data map[string]string, level int) *SSTable {
+	minKey, maxKey := findMinMaxKeys(data)
+	return &SSTable{
+		MinKey: minKey,
+		MaxKey: maxKey,
+		Data:   data,
+		Size:   len(data),
+		Level:  level,
 	}
+}
+
+func findMinMaxKeys(data map[string]string) (string, string) {
+	minKey := ""
+	maxKey := ""
 	for k := range data {
-		sst.Keys = append(sst.Keys, k)
+		if minKey == "" || k < minKey {
+			minKey = k
+		}
+		if k > maxKey {
+			maxKey = k
+		}
 	}
-	sort.Strings(sst.Keys)
-
-	// Save to disk as JSON
-	err := sst.save()
-	if err != nil {
-		return nil, err
-	}
-
-	return sst, nil
+	return minKey, maxKey
 }
 
-func (s *SSTable) save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (sst *SSTable) SaveToDisk(filename string) error {
+	path := filepath.Clean(filename)
 
-	jsonData, err := json.Marshal(s.Data)
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(s.Path, jsonData, 0644)
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	return encoder.Encode(sst)
 }
 
+// load sstable from file
 func LoadSSTable(path string) (*SSTable, error) {
-	jsonData, err := ioutil.ReadFile(path)
+	file, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}
-	var data map[string]string
-	err = json.Unmarshal(jsonData, &data)
-	if err != nil {
-		return nil, err
-	}
-	sst := &SSTable{
-		Path: path,
-		Data: data,
-		Keys: make([]string, 0, len(data)),
-	}
-	for k := range data {
-		sst.Keys = append(sst.Keys, k)
-	}
-	sort.Strings(sst.Keys)
-	return sst, nil
+	defer file.Close()
+
+	var sst SSTable
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&sst)
+	return &sst, err
 }
 
-func (s *SSTable) Get(key string) (string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (sst *SSTable) Get(key string) (string, bool) {
+	val, found := sst.Data[key]
+	return val, found
+}
 
-	val, ok := s.Data[key]
-	if !ok {
-		return "", errors.New("key not found")
+func (sst *SSTable) Metadata() map[string]interface{} {
+	var minKey, maxKey string
+	for k := range sst.Data {
+		if minKey == "" || k < minKey {
+			minKey = k
+		}
+		if maxKey == "" || k > maxKey {
+			maxKey = k
+		}
 	}
-	return val, nil
+	return map[string]interface{}{
+		"minKey": sst.MinKey,
+		"maxKey": sst.MaxKey,
+		"size":   len(sst.Data),
+		"level":  sst.Level,
+	}
 }

@@ -1,122 +1,113 @@
 package lsm
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"sync"
+	"path/filepath"
+	"time"
 )
 
-type Store struct {
-	mu       sync.RWMutex
-	memtable *Memtable
-	wal      *WAL
-
-	sstables []*SSTable // level 0 for now
-
-	bloom *BloomFilter
-
-	sstCounter int
+type LSMTree struct {
+	memtable       *Memtable
+	memtableCap    int
+	bloom          *BloomFilter
+	sstables       [][]*SSTable
+	levelMaxFiles  int
+	compactionLogs []string
 }
 
-func NewStore(walPath string) (*Store, error) {
-	wal, err := NewWAL(walPath)
+func NewLSMTree(memtableCap, bloomSize int) *LSMTree {
+	return &LSMTree{
+		memtable:      NewMemtable(memtableCap),
+		memtableCap:   memtableCap,
+		bloom:         NewBloomFilter(uint(bloomSize)),
+		sstables:      [][]*SSTable{{}},
+		levelMaxFiles: 4,
+	}
+}
+
+func (tree *LSMTree) Put(key, val string) {
+	tree.memtable.Put(key, val)
+	tree.bloom.Add(key)
+
+	if tree.memtable.Size() >= tree.memtableCap {
+		tree.flushMemtable()
+	}
+}
+
+func (tree *LSMTree) flushMemtable() {
+	data := tree.memtable.Flush()
+	newSST := NewSSTable(data, 0)
+	tree.sstables[0] = append(tree.sstables[0], newSST)
+	tree.compactionLogs = append(tree.compactionLogs, "Memtable flushed to SSTable level 0 with "+fmt.Sprint(len(data))+" keys")
+	tree.compactLevel(0)
+
+	filename := fmt.Sprintf("sstables/level%d-%d.sst", newSST.Level, time.Now().UnixNano())
+	err := newSST.SaveToDisk(filename)
 	if err != nil {
-		return nil, err
+		log.Println("Failed to persist SSTable:", err)
 	}
-	return &Store{
-		memtable: NewMemtable(),
-		wal:      wal,
-		bloom:    NewBloomFilter(1000),
-		sstables: []*SSTable{},
-	}, nil
 }
 
-func (s *Store) Put(key, value string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.memtable.Put(key, value)
-	err := s.wal.Write(key, value)
-	if err != nil {
-		return err
+func (tree *LSMTree) Get(key string) (string, bool) {
+	// Check memtable
+	if val, ok := tree.memtable.Get(key); ok {
+		return val, true
 	}
-	s.bloom.Add(key)
-	// Flush if memtable size exceeds threshold (e.g., 5 entries for demo)
-	if len(s.memtable.keys) >= 5 {
-		return s.flushMemtable()
+	// Check bloom filter first
+	if !tree.bloom.Test(key) {
+		return "", false
 	}
-	return nil
-}
-
-func (s *Store) flushMemtable() error {
-	flushed := s.memtable.Flush()
-	sstPath := fmt.Sprintf("sstable_%d.json", s.sstCounter)
-	s.sstCounter++
-	sst, err := NewSSTableFromMap(sstPath, flushed)
-	if err != nil {
-		return err
-	}
-	s.sstables = append(s.sstables, sst)
-	fmt.Println("Flushed Memtable to SSTable:", sstPath)
-	return nil
-}
-
-func (s *Store) Get(key string) (string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Check Memtable first
-	val, err := s.memtable.Get(key)
-	if err == nil {
-		return val, nil
-	}
-
-	// Check Bloom filter
-	if !s.bloom.MightContain(key) {
-		return "", fmt.Errorf("key %s definitely not present (bloom filter miss)", key)
-	}
-
-	// Search SSTables in reverse order (newest first)
-	for i := len(s.sstables) - 1; i >= 0; i-- {
-		val, err := s.sstables[i].Get(key)
-		if err == nil {
-			return val, nil
+	// Check SSTables from level 0 up
+	for _, level := range tree.sstables {
+		for _, sst := range level {
+			if val, ok := sst.Get(key); ok {
+				return val, true
+			}
 		}
 	}
-	return "", fmt.Errorf("key %s not found", key)
+	return "", false
 }
 
-func (s *Store) Close() error {
-	return s.wal.Close()
+func (tree *LSMTree) MemtableKeys() []string {
+	return tree.memtable.Keys()
 }
 
-// Compact SSTables example (compact last 2 SSTables)
-func (s *Store) Compact() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (tree *LSMTree) BloomStats() map[string]interface{} {
+	return tree.bloom.Stats()
+}
 
-	if len(s.sstables) < 2 {
-		return nil
+func (tree *LSMTree) SSTablesMetadata() []map[string]interface{} {
+	levels := []map[string]interface{}{}
+	for i, level := range tree.sstables {
+		var levelInfo []map[string]interface{}
+		for _, sst := range level {
+			levelInfo = append(levelInfo, sst.Metadata())
+		}
+		levels = append(levels, map[string]interface{}{
+			"level": i,
+			"ssts":  levelInfo,
+		})
 	}
-	sst1 := s.sstables[len(s.sstables)-2]
-	sst2 := s.sstables[len(s.sstables)-1]
+	return levels
+}
 
-	newPath := fmt.Sprintf("sstable_%d_compacted.json", s.sstCounter)
-	s.sstCounter++
+func (tree *LSMTree) CompactionLogs() []string {
+	return tree.compactionLogs
+}
 
-	newSST, err := CompactSSTables(sst1, sst2, newPath)
-	if err != nil {
-		return err
+func (lsm *LSMTree) LoadSSTablesFromDisk() {
+	files, _ := filepath.Glob("sstables/*.sst")
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		var sst SSTable
+		if err := json.Unmarshal(data, &sst); err == nil {
+			lsm.sstables[sst.Level] = append(lsm.sstables[sst.Level], &sst)
+		}
 	}
-
-	// Remove last two SSTables and add the new one
-	s.sstables = s.sstables[:len(s.sstables)-2]
-	s.sstables = append(s.sstables, newSST)
-
-	// Optionally remove old SSTable files from disk
-	os.Remove(sst1.Path)
-	os.Remove(sst2.Path)
-
-	fmt.Println("Compacted SSTables into:", newPath)
-	return nil
 }
